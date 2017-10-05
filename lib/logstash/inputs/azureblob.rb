@@ -31,6 +31,7 @@ class LogStash::Inputs::Example < LogStash::Inputs::Base
   # The blob container name.
   config :container, :validate => :string, :requried => true
 
+
   public
   def register
   end # def register
@@ -63,6 +64,10 @@ class LogStash::Inputs::Example < LogStash::Inputs::Base
       event = LogStash::Event.new("message" => content, "container" => @container)
       decorate(event)
       queue << event
+
+      blob_client.delete_blob(@container, blob.name)
+
+      break if stop?
     end
   end
 
