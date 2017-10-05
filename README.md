@@ -1,4 +1,4 @@
-# Logstash Plugin
+# Azure Blob Logstash Input Plugin
 
 [![Travis Build Status](https://travis-ci.org/logstash-plugins/logstash-input-example.svg)](https://travis-ci.org/logstash-plugins/logstash-input-example)
 
