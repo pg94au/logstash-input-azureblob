@@ -72,13 +72,17 @@ class LogStash::Inputs::AzureBlob < LogStash::Inputs::Base
     blobs.each do |blob|
       @pool.post do
         if !stop?
+          @logger.debug("Fetching blob #{blob.name}")
           blob, content = blob_client.get_blob(@container, blob.name)
 
+          @logger.debug("Queueing event for blob #{blob.name}")
           event = LogStash::Event.new("message" => content, "container" => @container)
           decorate(event)
           queue << event
 
+          @logger.debug("Deleting blob #{blob.name}")
           blob_client.delete_blob(@container, blob.name)
+          @logger.debug("Finished processing blob #{blob.name}")
         end
       end
 
