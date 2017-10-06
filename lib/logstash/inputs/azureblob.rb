@@ -1,14 +1,13 @@
 # encoding: utf-8
+require "azure/storage"
+require "concurrent"
 require "logstash/inputs/base"
 require "logstash/namespace"
 require "stud/interval"
-require "azure/storage"
 
-# Generate a repeating message.
-#
-# This plugin is intented only as an example.
+# This plugin is able to retrieve logged events from Azure blob storage.
 
-class LogStash::Inputs::Example < LogStash::Inputs::Base
+class LogStash::Inputs::AzureBlob < LogStash::Inputs::Base
   config_name "azureblob"
 
   # If undefined, Logstash will complain, even if codec is unused.
@@ -22,6 +21,9 @@ class LogStash::Inputs::Example < LogStash::Inputs::Base
   # The default, `1`, means send a message every second.
   config :interval, :validate => :number, :default => 1
 
+  # The number of threads utilized to retrieve blobs.
+  config :threads, :validate => :number, :default => 20
+
   # The Azure storage account name.
   config :account_name, :validate => :string, :required => true
 
@@ -34,7 +36,13 @@ class LogStash::Inputs::Example < LogStash::Inputs::Base
 
   public
   def register
-  end # def register
+    @logger.info("Creating thread pool with #{@threads} threads.")
+    @pool = Concurrent::ThreadPoolExecutor.new(
+      min_threads: @threads,
+      max_threads: @threads,
+      max_queue: 0
+    )
+  end
 
   def run(queue)
     # we can abort the loop if stop? becomes true
@@ -45,9 +53,10 @@ class LogStash::Inputs::Example < LogStash::Inputs::Base
       # we want to be able to abort the sleep
       # Stud.stoppable_sleep will frequently evaluate the given block
       # and abort the sleep(@interval) if the return value is true
+      @logger.info("Sleeping for #{@interval} seconds.")
       Stud.stoppable_sleep(@interval) { stop? }
     end # loop
-  end # def run
+  end
 
   def send_logs_to_queue(queue)
     azure_client = Azure::Storage::Client.create(:storage_account_name => @account_name, :storage_access_key => @access_key)
@@ -58,25 +67,34 @@ class LogStash::Inputs::Example < LogStash::Inputs::Base
     # Sort by last modified date so newest come last.  Format is: Wed, 30 Aug 2017 22:19:03 GMT
     blobs = blobs.sort_by {|blob| DateTime.parse(blob.properties[:last_modified])}
 
+    @logger.info("Found #{blobs.length} blobs to be retrieved.")
+
     blobs.each do |blob|
-      blob, content = blob_client.get_blob(@container, blob.name)
+      @pool.post do
+        if !stop?
+          blob, content = blob_client.get_blob(@container, blob.name)
 
-      event = LogStash::Event.new("message" => content, "container" => @container)
-      decorate(event)
-      queue << event
+          event = LogStash::Event.new("message" => content, "container" => @container)
+          decorate(event)
+          queue << event
 
-      blob_client.delete_blob(@container, blob.name)
+          blob_client.delete_blob(@container, blob.name)
+        end
+      end
 
-      break if stop?
+      if stop?
+        @logger.info("Received request to shutdown while iterating through blobs to be retrieved.")
+        break
+      end
     end
   end
 
   def stop
-    # nothing to do in this case so it is not necessary to define stop
-    # examples of common "stop" tasks:
-    #  * close sockets (unblocking blocking reads/accepts)
-    #  * cleanup temporary files
-    #  * terminate spawned threads
+    @logger.info("Shutting down thread pool.")
+    @pool.shutdown
+    @logger.info("Waiting for thread pool to terminate.")
+    @pool.wait_for_termination
+    @logger.info("Done.")
   end
 
   def list_all_blobs(blob_client, container)
@@ -93,4 +111,4 @@ class LogStash::Inputs::Example < LogStash::Inputs::Base
     end
     return blobs.to_a
   end
-end # class LogStash::Inputs::Example
+end
