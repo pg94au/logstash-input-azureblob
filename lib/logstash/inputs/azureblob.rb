@@ -53,7 +53,7 @@ class LogStash::Inputs::AzureBlob < LogStash::Inputs::Base
       # we want to be able to abort the sleep
       # Stud.stoppable_sleep will frequently evaluate the given block
       # and abort the sleep(@interval) if the return value is true
-      @logger.info("Sleeping for #{@interval} seconds.")
+      @logger.debug("Sleeping for #{@interval} seconds.")
       Stud.stoppable_sleep(@interval) { stop? }
     end # loop
   end
@@ -67,7 +67,9 @@ class LogStash::Inputs::AzureBlob < LogStash::Inputs::Base
     # Sort by last modified date so newest come last.  Format is: Wed, 30 Aug 2017 22:19:03 GMT
     blobs = blobs.sort_by {|blob| DateTime.parse(blob.properties[:last_modified])}
 
-    @logger.info("Found #{blobs.length} blobs to be retrieved.")
+    if blobs.length > 0
+        @logger.info("Found #{blobs.length} blobs to be retrieved.")
+    end
 
     blobs.each do |blob|
       @pool.post do
