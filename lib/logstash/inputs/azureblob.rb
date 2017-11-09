@@ -77,10 +77,16 @@ class LogStash::Inputs::AzureBlob < LogStash::Inputs::Base
           @logger.debug("Fetching blob #{blob.name}")
           blob, content = blob_client.get_blob(@container, blob.name)
 
+          sort_order = get_sortable_value_from_filename(blob.name)
           timestamp = get_timestamp_from_filename(blob.name)
 
           @logger.debug("Queueing event for blob #{blob.name}")
-          event = LogStash::Event.new("timestamp" => timestamp, "message" => content, "container" => @container)
+          event = LogStash::Event.new(
+            "sort_order" => sort_order,
+            "timestamp" => timestamp,
+            "message" => content,
+            "container" => @container
+          )
           decorate(event)
           queue << event
 
@@ -120,7 +126,7 @@ class LogStash::Inputs::AzureBlob < LogStash::Inputs::Base
     return blobs.to_a
   end
 
-  def get_timestamp_from_filename(filename)
+  def get_sortable_value_from_filename(filename)
     # Log4net appender creates blobs with filenames containing the timestamp of the log entry.
     # (This could look like
     # "logs/2017_11_01_19_41_34_4218211.91186457-c552-4f09-b927-d82d4fb75304.entry.log.xml"
@@ -136,6 +142,17 @@ class LogStash::Inputs::AzureBlob < LogStash::Inputs::Base
       index_before_first_period = timestamp.index('.') - 1
       timestamp = timestamp[0..index_before_first_period] # Remove after timestamp
     end
+
+    return timestamp
+  end
+
+  def get_timestamp_from_filename(filename)
+    # Could consider improvements here to better handle case where filename doesn't split as expected.
+    sortable = get_sortable_value_from_filename(filename)
+
+    parts = sortable.split('_')
+
+    timestamp = "#{parts[0]}-#{parts[1]}-#{parts[2]}T#{parts[3]}:#{parts[4]}:#{parts[5]}.#{parts[6]}Z"
 
     return timestamp
   end
