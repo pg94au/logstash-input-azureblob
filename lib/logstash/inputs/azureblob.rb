@@ -77,8 +77,10 @@ class LogStash::Inputs::AzureBlob < LogStash::Inputs::Base
           @logger.debug("Fetching blob #{blob.name}")
           blob, content = blob_client.get_blob(@container, blob.name)
 
+          timestamp = get_timestamp_from_filename(blob.name)
+
           @logger.debug("Queueing event for blob #{blob.name}")
-          event = LogStash::Event.new("message" => content, "container" => @container)
+          event = LogStash::Event.new("timestamp" => timestamp, "message" => content, "container" => @container)
           decorate(event)
           queue << event
 
@@ -116,5 +118,25 @@ class LogStash::Inputs::AzureBlob < LogStash::Inputs::Base
       break if continuation_token.empty?
     end
     return blobs.to_a
+  end
+
+  def get_timestamp_from_filename(filename)
+    # Log4net appender creates blobs with filenames containing the timestamp of the log entry.
+    # (This could look like
+    # "logs/2017_11_01_19_41_34_4218211.91186457-c552-4f09-b927-d82d4fb75304.entry.log.xml"
+    # and we want
+    # "2017_11_01_19_41_34_4218211".)
+    timestamp = filename
+    if timestamp.rindex('/')
+      index_after_last_slash = timestamp.rindex('/') + 1
+      timestamp = filename[index_after_last_slash..-1] # Remove any folder
+    end
+
+    if timestamp.index('.')
+      index_before_first_period = timestamp.index('.') - 1
+      timestamp = timestamp[0..index_before_first_period] # Remove after timestamp
+    end
+
+    return timestamp
   end
 end
